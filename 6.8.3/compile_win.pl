@@ -105,7 +105,7 @@ printLineToBat (":OPENSSL_ALREAD_COMPILED");
 
 # openssl: see https://bugreports.qt.io/browse/QTBUG-65501
 
-my $skipped_modules = "qthttpserver qtlocation qtspeech qtgrpc qt3d qtactiveqt qtcharts qtcoap qtconnectivity qtdatavis3d qtdoc qtlottie qtmqtt qtnetworkauth qtopcua qtpositioning qtremoteobjects qtscxml qtsensors qtserialbus qtserialport qtsvg qttranslations qtvirtualkeyboard qtwayland qtwebchannel qtwebengine qtwebsockets qtwebview";
+my $skipped_modules = "qthttpserver qtlocation qtspeech qtgrpc qt3d qtactiveqt qtcharts qtcoap qtconnectivity qtdatavis3d qtdoc qtlottie qtmqtt qtnetworkauth qtopcua qtpositioning qtremoteobjects qtscxml qtsensors qtserialbus qtserialport qttranslations qtvirtualkeyboard qtwayland qtwebchannel qtwebengine qtwebsockets qtwebview";
 $skipped_modules .= " qtquickeffectmaker qtquicktimeline qtquick3d qtquick3dphysics";
 
 $skipped_modules.=' qtmultimedia' if (!$build_multimedia);
@@ -169,6 +169,7 @@ printLineToBat ("rmdir $install_dir\\_tools /s /q");
 
 if ($build_pdf)
 {
+    printLineToBat ("rmdir _qtwebengine-pdf-build-$arch /s /q"); # remove the folder from the previous builds!
     printLineToBat ("mkdir _qtwebengine-pdf-build-$arch");
     printLineToBat ("cd _qtwebengine-pdf-build-$arch");
 
