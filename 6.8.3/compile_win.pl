@@ -1,5 +1,7 @@
 # from https://wiki.qt.io/Building_Qt_Multimedia_with_FFmpeg
-# vcpkg install ffmpeg[core,swresample,swscale,avdevice]:x64-windows
+# FFmpeg for --build-multimedia comes from --ffmpeg-dir (preferred: the 3rdParty
+# _build\ffmpeg-qt prefix, with include\ + lib\ + bin\) or, legacy, from --vcpkg-dir
+# (vcpkg install ffmpeg[core,swresample,swscale,avdevice]:x64-windows).
 
 use strict;
 use Cwd;
@@ -18,12 +20,14 @@ $prefix_dir =~ s#/#\\#g; # convert separators to Windows-style
 my $arch = $ARGV[0];
 my $install_dir = $ARGV[1];
 my $vcpkg_dir;
+my $ffmpeg_dir;
 my $build_multimedia = 0;
 my $build_graphs = 0;
 my $build_pdf = 0;
 
 GetOptions(
     'vcpkg-dir=s'    => \$vcpkg_dir,
+    'ffmpeg-dir=s'   => \$ffmpeg_dir,
     'build-multimedia'   => \$build_multimedia,
     'build-graphs'   => \$build_graphs,
     'build-pdf'   => \$build_pdf,
@@ -47,7 +51,13 @@ if (defined $vcpkg_dir)
     die "vcpkg dir $vcpkg_dir doesn't exist" if (!-e "$vcpkg_dir");
 }
 
-die "vcpkg_dir dir is required to build multimedia" if ($build_multimedia && !defined $vcpkg_dir);
+# FFmpeg prefix for the multimedia build: prefer an explicit --ffmpeg-dir (e.g. the
+# 3rdParty _build\ffmpeg-qt prefix), else fall back to the vcpkg install dir. Qt's
+# FindFFmpeg is pointed at it via -DFFMPEG_DIR below.
+my $ffmpeg_prefix = defined $ffmpeg_dir ? $ffmpeg_dir : $vcpkg_dir;
+
+die "either --ffmpeg-dir or --vcpkg-dir is required to build multimedia" if ($build_multimedia && !defined $ffmpeg_prefix);
+die "ffmpeg dir '$ffmpeg_prefix' doesn't exist" if ($build_multimedia && !-e "$ffmpeg_prefix");
 
 my $openssl_version = "3.0.13"; # supported until 7th September 2026
 my $openssl_download = "https://www.openssl.org/source/openssl-$openssl_version.tar.gz";
@@ -139,7 +149,7 @@ $configure_cmd .= " $skipped_modules_cmd";
 $configure_cmd .= " -openssl-linked -- -DOPENSSL_ROOT_DIR=\"$openssl_dir\\build\" -DOPENSSL_INCLUDE_DIR=\"$openssl_dir\\build\\include\" -DOPENSSL_USE_STATIC_LIBS=ON";
 
 # append ffmpeg dir when building multimedia
-$configure_cmd .= " -DFFMPEG_DIR=$vcpkg_dir" if ($build_multimedia);
+$configure_cmd .= " -DFFMPEG_DIR=$ffmpeg_prefix" if ($build_multimedia);
 
 printLineToBat ($configure_cmd);
 
