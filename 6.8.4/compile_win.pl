@@ -2,6 +2,10 @@
 # FFmpeg for --build-multimedia comes from --ffmpeg-dir (preferred: the 3rdParty
 # _build\ffmpeg-qt prefix, with include\ + lib\ + bin\) or, legacy, from --vcpkg-dir
 # (vcpkg install ffmpeg[core,swresample,swscale,avdevice]:x64-windows).
+#
+# --build-webengine builds the whole qtwebengine module (QtWebEngine + QtPdf), so it
+# supersedes --build-pdf, which builds QtPdf only. Both are amd64-only and require the
+# extra host tools listed at https://doc.qt.io/qt-6/qtwebengine-platform-notes.html
 
 use strict;
 use Cwd;
@@ -24,6 +28,7 @@ my $ffmpeg_dir;
 my $build_multimedia = 0;
 my $build_graphs = 0;
 my $build_pdf = 0;
+my $build_webengine = 0;
 
 GetOptions(
     'vcpkg-dir=s'    => \$vcpkg_dir,
@@ -31,6 +36,7 @@ GetOptions(
     'build-multimedia'   => \$build_multimedia,
     'build-graphs'   => \$build_graphs,
     'build-pdf'   => \$build_pdf,
+    'build-webengine'   => \$build_webengine,
 ) or die "Error in command line arguments\n";
 
 $arch = "amd64" if ($arch eq ''); # amd64 is nothing is specified, can be x86
@@ -42,6 +48,36 @@ die "Error: istall dir '$install_dir' already exists" if (-d $install_dir);
 my $build_dir = "_qt6-build-$arch";
 
 die "Error: build dir '$build_dir' already exists" if (-d $build_dir);
+
+if ($arch eq 'x86')
+{
+    # This version of the script is not able to build x86 qtwebengine on a 64-bit machine"
+    # need to override target_cpu='x86' somehow: https://www.chromium.org/developers/gn-build-configuration/
+
+    print "Warning: qtwebengine is not built for x86, skipping --build-webengine\n" if ($build_webengine);
+    print "Warning: qtpdf is not built for x86, skipping --build-pdf\n" if ($build_pdf);
+
+    $build_pdf = 0;
+    $build_webengine = 0;
+}
+
+# qtwebengine (unlike the QtPdf-only build) needs a couple of host tools that are not
+# shipped in '_tools': https://doc.qt.io/qt-6/qtwebengine-platform-notes.html
+if ($build_webengine)
+{
+    my $python = can_run('python') || can_run('python3');
+
+    die "Error: python (3.8+) is required to build qtwebengine, but was not found in PATH" if (!$python);
+
+    # a 'python3' found in PATH is often just the Microsoft Store stub, so actually run the
+    # interpreter instead of trusting the file name - this checks both at once
+    die "Error: '$python' cannot import html5lib, run 'python -m pip install html5lib'" if (!run(command => [$python, '-c', 'import html5lib']));
+
+    die "Error: node.js (14+) is required to build qtwebengine, but was not found in PATH" if (!can_run('node'));
+
+    # building the whole module already gives us QtPdf, no need for a second pass
+    $build_pdf = 0;
+}
 
 if (defined $vcpkg_dir)
 {
@@ -121,22 +157,25 @@ $skipped_modules .= " qtquickeffectmaker qtquicktimeline qtquick3d qtquick3dphys
 $skipped_modules.=' qtmultimedia' if (!$build_multimedia);
 $skipped_modules.=' qtgraphs' if (!$build_graphs);
 
-if ($build_pdf && $arch eq 'x86')
-{
-    # This version of the script is not able to build x86 qtwebengine on a 64-bit machine"
-    # need to override target_cpu='x86' somehow: https://www.chromium.org/developers/gn-build-configuration/
-
-    $build_pdf = 0;
-}
-
-if (!$build_pdf)
+if (!$build_pdf && !$build_webengine)
 {
     $skipped_modules .= ' qtdeclarative';
+}
+
+# qtwebengine is compiled as a separate module once Qt itself is installed (see below),
+# so the modules it links against have to be un-skipped here
+my %required_modules;
+
+if ($build_webengine)
+{
+    $required_modules{$_} = 1 foreach ('qtwebchannel', 'qtpositioning');
 }
 
 my $skipped_modules_cmd;
 
 foreach (split(/\s/, $skipped_modules)) {
+    next if ($required_modules{$_});
+
     $skipped_modules_cmd .= "-skip $_ ";
 }
 
@@ -184,6 +223,17 @@ if ($build_pdf)
     printLineToBat ("cd _qtwebengine-pdf-build-$arch");
 
     printLineToBat ("$install_dir\\bin\\qt-configure-module.bat ../qtwebengine -- -DFEATURE_qtwebengine_build=OFF && cmake --build . --parallel && cmake --install . --config Release && cmake --install . --config Debug")
+}
+
+# and the whole webengine module (Chromium included), which also gives us QtPdf
+
+if ($build_webengine)
+{
+    printLineToBat ("rmdir _qtwebengine-build-$arch /s /q"); # remove the folder from the previous builds!
+    printLineToBat ("mkdir _qtwebengine-build-$arch");
+    printLineToBat ("cd _qtwebengine-build-$arch");
+
+    printLineToBat ("$install_dir\\bin\\qt-configure-module.bat ../qtwebengine && cmake --build . --parallel && cmake --install . --config Release && cmake --install . --config Debug")
 }
 
 close BAT;
